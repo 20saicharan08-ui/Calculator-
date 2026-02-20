@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { CalculatorMode, CalcState, Formula } from './types';
 import { FORMULAS, CATEGORIES } from './constants';
 import { solveFormula } from './utils/math';
@@ -20,7 +20,7 @@ const App: React.FC = () => {
     isExplaining: false,
   });
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  /* ---------------- BASIC LOGIC ---------------- */
 
   const reset = useCallback(() => {
     setState(prev => ({
@@ -42,25 +42,6 @@ const App: React.FC = () => {
       if (prev.resultShown) return { ...prev, display: digit, resultShown: false };
       if (digit === '.' && prev.display.includes('.')) return prev;
       return { ...prev, display: prev.display + digit };
-    });
-  }, []);
-
-  const toggleSign = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      display: prev.display.startsWith('-')
-        ? prev.display.slice(1)
-        : '-' + prev.display
-    }));
-  }, []);
-
-  const handleScientific = useCallback((op: 'sqrt' | 'sq' | 'pi') => {
-    setState(prev => {
-      let newVal = parseFloat(prev.display) || 0;
-      if (op === 'sqrt') newVal = Math.sqrt(newVal);
-      if (op === 'sq') newVal = Math.pow(newVal, 2);
-      if (op === 'pi') return { ...prev, display: Math.PI.toString(), resultShown: false };
-      return { ...prev, display: newVal.toString(), resultShown: false };
     });
   }, []);
 
@@ -92,21 +73,20 @@ const App: React.FC = () => {
             parameterValues: updatedParams,
             resultShown: true
           };
-        } else {
-          return {
-            ...prev,
-            display: '',
-            parameterValues: updatedParams,
-            currentParamIndex: prev.currentParamIndex + 1,
-          };
         }
+
+        return {
+          ...prev,
+          display: '',
+          parameterValues: updatedParams,
+          currentParamIndex: prev.currentParamIndex + 1,
+        };
       }
 
       if (prev.mode === CalculatorMode.BASIC) {
         try {
           const fullExpr = prev.expression + ' ' + (prev.display || '0');
           const sanitizedExpr = fullExpr.replace(/[^-+\/*.\d\s]/g, '');
-          // eslint-disable-next-line no-eval
           const result = eval(sanitizedExpr);
           return {
             ...prev,
@@ -140,6 +120,8 @@ const App: React.FC = () => {
     }));
   }, []);
 
+  /* ---------------- FORMULA FLOW ---------------- */
+
   const selectCategory = (index: number) => {
     setState(prev => ({
       ...prev,
@@ -161,7 +143,8 @@ const App: React.FC = () => {
     }));
   };
 
-  // ✅ SECURE BACKEND CALL
+  /* ---------------- SECURE BACKEND EXPLAIN ---------------- */
+
   const getExplanation = async () => {
     if (!state.activeFormula || state.parameterValues.length === 0) return;
 
@@ -174,9 +157,7 @@ const App: React.FC = () => {
     try {
       const response = await fetch("/api/explain", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           formulaName: state.activeFormula.name,
           result: state.display,
@@ -187,9 +168,7 @@ const App: React.FC = () => {
         })
       });
 
-      if (!response.ok) {
-        throw new Error("API request failed");
-      }
+      if (!response.ok) throw new Error("API failed");
 
       const data = await response.json();
 
@@ -199,8 +178,7 @@ const App: React.FC = () => {
         isExplaining: false
       }));
 
-    } catch (error) {
-      console.error(error);
+    } catch {
       setState(p => ({
         ...p,
         explanation: "ERROR: Failed to generate explanation.",
@@ -210,15 +188,16 @@ const App: React.FC = () => {
   };
 
   const currentCategory = CATEGORIES[state.currentCategoryIndex];
-
-  const filteredFormulas = useMemo(() =>
-    FORMULAS.filter(f => f.category === currentCategory),
+  const filteredFormulas = useMemo(
+    () => FORMULAS.filter(f => f.category === currentCategory),
     [currentCategory]
   );
 
+  /* ---------------- RENDER ---------------- */
+
   return (
     <div className="fixed inset-0 bg-black flex flex-col justify-center sm:p-4 md:p-8">
-      <div className="w-full h-full max-w-xl mx-auto bg-zinc-950 sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl border border-zinc-900 shadow-emerald-950/20">
+      <div className="w-full h-full max-w-xl mx-auto bg-zinc-950 rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl border border-zinc-900">
 
         <CalculatorDisplay
           value={state.display}
@@ -232,71 +211,86 @@ const App: React.FC = () => {
 
         <div className="flex-1 flex flex-col min-h-0 relative">
 
-          {/* BASIC MODE */}
-          {state.mode === CalculatorMode.BASIC && (
-            <div className="flex-1 grid grid-cols-4 grid-rows-5 gap-0 p-2 sm:p-4">
-              <button onClick={reset} className="p-1">
-                <div className="flex items-center justify-center text-lg sm:text-xl font-bold h-full w-full rounded-2xl bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-all">
-                  AC
-                </div>
-              </button>
+          {state.mode === CalculatorMode.BASIC ? (
 
-              <button onClick={toggleMode} className="p-1">
-                <div className="flex items-center justify-center text-lg sm:text-xl font-bold h-full w-full rounded-2xl bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-all">
-                  fx
-                </div>
-              </button>
+            /* BASIC MODE */
+            <div className="flex-1 grid grid-cols-4 grid-rows-5 p-4">
+              <CalcButton label="AC" onClick={reset} />
+              <CalcButton label="fx" onClick={toggleMode} />
+              <CalcButton label="⌫" onClick={() => setState(p => ({ ...p, display: p.display.slice(0, -1) }))} />
+              <CalcButton label="÷" onClick={() => handleOperator('/')} />
 
-              <button onClick={() => setState(p => ({ ...p, display: p.display.slice(0, -1) }))} className="p-1">
-                <div className="flex items-center justify-center text-lg sm:text-xl font-bold h-full w-full rounded-2xl bg-zinc-800 text-zinc-400 hover:bg-zinc-700 transition-all">
-                  ⌫
-                </div>
-              </button>
-
-              <CalcButton label="÷" onClick={() => handleOperator('/')} variant="accent" />
               <CalcButton label="7" onClick={() => handleDigit('7')} />
               <CalcButton label="8" onClick={() => handleDigit('8')} />
               <CalcButton label="9" onClick={() => handleDigit('9')} />
-              <CalcButton label="×" onClick={() => handleOperator('*')} variant="accent" />
+              <CalcButton label="×" onClick={() => handleOperator('*')} />
+
               <CalcButton label="4" onClick={() => handleDigit('4')} />
               <CalcButton label="5" onClick={() => handleDigit('5')} />
               <CalcButton label="6" onClick={() => handleDigit('6')} />
-              <CalcButton label="-" onClick={() => handleOperator('-')} variant="accent" />
+              <CalcButton label="-" onClick={() => handleOperator('-')} />
+
               <CalcButton label="1" onClick={() => handleDigit('1')} />
               <CalcButton label="2" onClick={() => handleDigit('2')} />
               <CalcButton label="3" onClick={() => handleDigit('3')} />
-              <CalcButton label="+" onClick={() => handleOperator('+')} variant="accent" />
-              <CalcButton label="0" onClick={() => handleDigit('0')} className="col-span-2" />
+              <CalcButton label="+" onClick={() => handleOperator('+')} />
+
+              <CalcButton label="0" onClick={() => handleDigit('0')} />
               <CalcButton label="." onClick={() => handleDigit('.')} />
-              <CalcButton label="=" onClick={handleEqual} variant="accent" />
+              <CalcButton label="=" onClick={handleEqual} />
             </div>
-          )}
 
-          {/* RESULT MODE */}
-          {state.formulaStep === 'RESULT' && (
-            <div className="flex-1 flex flex-col gap-6 p-4 sm:p-6">
-              <div className="p-10 bg-zinc-900/40 rounded-[2.5rem] border border-zinc-900 text-center">
-                <div className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.5em] mb-4">
-                  Solution
-                </div>
-                <div className="text-4xl sm:text-5xl font-mono text-emerald-400 break-all leading-relaxed">
-                  {state.display}
-                </div>
-              </div>
+          ) : (
 
-              <div className="grid grid-cols-2 gap-4">
-                <CalcButton label="Subjects" onClick={reset} variant="accent" className="min-h-[70px]" />
-                <CalcButton label="Explain" onClick={getExplanation} variant="formula" className="min-h-[70px]" />
-              </div>
+            /* ADVANCED MODE */
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
 
-              {state.explanation && (
-                <div className="flex-1 p-8 bg-zinc-900/20 rounded-[2.5rem] border border-zinc-900/50 overflow-y-auto">
-                  <pre className="text-zinc-300 text-sm font-mono whitespace-pre-wrap">
-                    {state.explanation}
-                  </pre>
+              {state.formulaStep === 'CATEGORY' && (
+                CATEGORIES.map((cat, i) => (
+                  <CalcButton key={cat} label={cat} onClick={() => selectCategory(i)} />
+                ))
+              )}
+
+              {state.formulaStep === 'FORMULA' && (
+                filteredFormulas.map(f => (
+                  <CalcButton key={f.id} label={f.name} onClick={() => selectFormula(f)} />
+                ))
+              )}
+
+              {state.formulaStep === 'INPUT' && (
+                <div className="grid grid-cols-4 gap-3">
+                  <CalcButton label="BACK" onClick={() => setState(p => ({ ...p, formulaStep: 'FORMULA' }))} />
+                  <CalcButton label="C" onClick={() => setState(p => ({ ...p, display: '' }))} />
+                  <CalcButton label="⌫" onClick={() => setState(p => ({ ...p, display: p.display.slice(0, -1) }))} />
+                  <CalcButton label="NEXT" onClick={handleEqual} />
+
+                  {[...'7894561230'].map(n => (
+                    <CalcButton key={n} label={n} onClick={() => handleDigit(n)} />
+                  ))}
                 </div>
               )}
+
+              {state.formulaStep === 'RESULT' && (
+                <>
+                  <div className="text-emerald-400 text-4xl font-mono text-center">
+                    {state.display}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <CalcButton label="Subjects" onClick={reset} />
+                    <CalcButton label="Explain" onClick={getExplanation} />
+                  </div>
+
+                  {state.explanation && (
+                    <pre className="text-sm text-zinc-300 whitespace-pre-wrap">
+                      {state.explanation}
+                    </pre>
+                  )}
+                </>
+              )}
+
             </div>
+
           )}
 
         </div>
